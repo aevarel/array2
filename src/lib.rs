@@ -1,180 +1,281 @@
-// I can't tell if most of this works, yet, there was a lot of heavy-lifting done by copilot
-// almost definitely needs error handling, and probably some other stuff
-
-// tells the array2 constructor how to fill the array2 (with a single value or from a vec) 
-pub enum ConstructWith<T> {
-    Singleton(T),
-    Collection(Vec<T>)
+//! `Array2` provides a fixed-size 2-dimensional array.
+//! Elements contained must implement `Clone`.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct Array2<T: Clone> {
+    width: usize,
+    height: usize,
+    data: Vec<T>,
 }
 
-// row_major may become obsolete
-#[derive(Debug)]
-pub struct Array2<T> {
-    pub data: Vec<Option<T>>,
-    pub width: usize,
-    pub height: usize,
-}
-
-// the compiler lets this code run, but we may want to take a second look
 impl<T: Clone> Array2<T> {
-
-    // creates a new Array2 with the given width and height, and fills it with the given initial data (constructor)
-    pub fn new(width: usize, height: usize, initial_data: ConstructWith<T>, row_major: bool) -> Array2<T> {
-
-        // stores the actual data in the array2
-        let mut data = Vec::with_capacity(width * height);
-        
-        // fills the array2 with the given initial data
-        match initial_data {
-
-            // fills data with single value if ConstructWith::Singleton
-            ConstructWith::Singleton(value) => {
-                for _ in 0..width * height {
-                    data.push(Some(value.clone()));
-                }
-            },
-            
-            // fills data with values from a vec if ConstructWith::Collection
-            ConstructWith::Collection(values) => {
-
-                // fills data with values from a vec in row major form
-                if row_major {
-                    for value in values {
-                        data.push(Some(value));
-                    }
-
-                // fills data with values from a vec in column major form
-                } else {
-                    for row in 0..height {
-                        for column in 0..width {
-                            let index: usize = row * width + column;
-                            data.push(Some(values[index].clone()));
-                        }
-                    }
-                }
-            }
-        }
-
-        // returns the new Array2
+    /// Creates a new `Array2` containing identical
+    /// values for every element.
+    ///
+    /// # Arguments
+    ///
+    /// * `width`: the width of the `Array2`.
+    /// * `height`: the height of the `Array2`.
+    /// * `val`: the value to fill every element with
+    ///
+    /// # Returns
+    ///
+    /// * An `Array2` of appropriate dimensions containing copies of `val`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use array2;
+    /// let a = Array2::new(2, 3, 42_u32);
+    /// ```
+    pub fn new(width: usize, height: usize, val: T) -> Self {
+        let data = vec![val; width * height];
         Array2 {
-            data,
             width,
             height,
+            data,
         }
     }
 
-    // gets the value at the given column and row
-    pub fn get(&self, column: usize, row: usize) -> Option<T> {
-        let index: usize = row * self.width + column;
-        if index >= self.data.len() {
-            return None;
-        }   
-        self.data[index].clone()
-    }
-
-    // sets the value at the given column and row
-    pub fn set(&mut self, column: usize, row: usize, value: T) {
-        let index: usize = row * self.width + column;
-        self.data[index] = Some(value);
-    }
-
-    // row major form iterator
-    pub fn iter_row_major(&self) -> RowMajorIterator<T> {
-        RowMajorIterator {
-            array2: self,
-            current_index: 0,
+    /// Creates a new `Array2` from a `Vec<T>`.
+    ///
+    /// # Arguments
+    ///
+    /// * `width`: the width of the `Array2`
+    /// * `height`: the height of the `Array2`
+    /// * `values`: A `Vec<T>`, in row-major order, whose
+    ///             `length` must be `width * height`.
+    /// # Returns
+    ///
+    /// * A `Result<Array2<T>, Error>` where the Array2 is of appropriate dimensions containing the
+    /// elements of `values` as presented in row-major order.
+    /// If the number of elements in `values` is not equal to `width*height`, the `Result` contains an error.
+    ///
+    pub fn from_row_major(width: usize, height: usize, values: Vec<T>) -> Result<Self, String> {
+        if width * height != values.len() {
+            Err(format!(
+                "Values has {} elements, which is not the product of width {} and height {}",
+                values.len(),
+                width,
+                height,
+            ))
+        } else {
+            Ok(Array2 {
+                width,
+                height,
+                data: values,
+            })
         }
     }
 
-    // column major form iterator
-    pub fn iter_col_major(&self) -> ColumnMajorIterator<T> {
-        ColumnMajorIterator {
-            array2: self,
-            current_row: 0,
-            current_col: 0,
+    /// Creates a new `Array2` from a `Vec<T>`.
+    ///
+    /// # Arguments
+    ///
+    /// * `width`: the width of the `Array2`
+    /// * `height`: the height of the `Array2`
+    /// * `values`: A `Vec<T>`, in column-major order, whose
+    ///             length must be `width * height`.
+    /// # Returns
+    ///
+    /// * An `Array2` of appropriate dimensions containing the
+    /// elements of `values` as presented in column-major order
+
+    pub fn from_col_major(width: usize, height: usize, values: Vec<T>) -> Result<Self, String> {
+        if width * height != values.len() {
+            Err(format!(
+                "Values has {} elements, which is not the product of width {} and height {}",
+                values.len(),
+                width,
+                height,
+            ))
+        } else {
+            Ok(Array2 {
+                width,
+                height,
+                data: (0..height)
+                    .map(|r| values.iter().skip(r))
+                    .flat_map(|row| row.step_by(height))
+                    .cloned()
+                    .collect(),
+            })
         }
     }
 
-    pub fn get_mut(&mut self, column: usize, row: usize) -> Option<&mut T> {
-        let index: usize = row * self.width + column;
-        self.data.get_mut(index).unwrap().as_mut()
+    /// Returns the height
+    /// 
+    /// # Arguments
+    /// 
+    /// * `&self` - the reference to the Array2
+    /// 
+    ///  # Returns
+    /// 
+    /// * `usize` - the height of the Array2
+    pub fn height(&self) -> usize {
+        self.height
     }
-    pub fn iter_row_major_mut(&mut self) -> RowMajorMutIterator<T> {
-        RowMajorMutIterator {
-            array2: self,
-            current_index: 0,
+
+    /// Returns the width
+    /// 
+    /// # Arguments
+    /// 
+    /// * `&self` - the reference to the Array2
+    /// 
+    /// # Returns
+    /// 
+    /// * `usize` - the width of the Array2
+    /// 
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    /// Returns an immutable reference to the element at the given `column` and `row`
+    /// as long as that index is in bounds
+    /// (wrapped in [`Some`]). Returns [`None`] if out of bounds.
+    ///
+    /// # Arguments
+    ///
+    /// * `c`: the column index.
+    /// * `r`: the row index.
+    ///
+    /// # Returns
+    ///
+    /// * An `Option<&T>` which is a reference to the value at
+    /// coordinates `(c,r)` if those indices are in bounds,
+    /// and `None` otherwise.
+    pub fn get(&self, c: usize, r: usize) -> Option<&T> {
+        self.get_index(c, r).map(|index| &self.data[index])
+    }
+
+    // alternate explanation (more verbose)
+    // pub fn alt_get(&self, c: usize, r: usize) -> Option<&T> {
+    //     let index = self.get_index(c,r);
+    //     match index {
+    //         Some(i) => Some(&self.data[i]),
+    //         None => None
+    //     }
+    // }
+
+    // sets a value at the specified column and row
+    //
+    // # Arguments
+    //
+    // * `c`: the column index.
+    // * `r`: the row index.
+    // * `val`: the value to set at the specified column and row
+
+    
+    pub fn set(&mut self, c: usize, r: usize, val: T) {
+        if let Some(index) = self.get_index(c, r) {
+            self.data[index] = val;
         }
     }
-}
 
-// iterator for row major form
-pub struct RowMajorIterator<'a, T> {
-    array2: &'a Array2<T>,
-    current_index: usize,
-}
+    /// Returns an immutable reference to the element at the given `column` and `row`
+    /// as long as that index is in bounds
+    /// (wrapped in [`Some`]). Returns [`None`] if out of bounds.
+    ///
+    /// # Arguments
+    ///
+    /// * `c`: the column index.
+    /// * `r`: the row index.
+    ///
+    /// # Returns
+    ///
+    /// * An `Option<&mut T>` which is a mutable reference to the value at
+    /// coordinates `(c,r)` if those indices are in bounds,
+    /// and `None` otherwise.
+    pub fn get_mut(&mut self, c: usize, r: usize) -> Option<&mut T> {
+        self.get_index(c, r).map(move |index| &mut self.data[index])
+    }
 
-impl<'a, T: Clone> Iterator for RowMajorIterator<'a, T> {
-    type Item = T;
+    // sets the height value to a given value of usize
+    pub fn set_height(&mut self, height: usize) {
+        self.height = height;
+    }
 
-    fn next(&mut self) -> Option<T> {
-        if self.current_index < self.array2.data.len() {
-            let value = self.array2.data[self.current_index].clone()?;
-            self.current_index += 1;
-            Some(value)
+    // sets the width value to a given value of usize
+    pub fn set_width(&mut self, width: usize) {
+        self.width = width;
+    }
+
+    /// helper function which implements the representation invariant
+    /// returns an `Option<usize>` which is the index in the
+    /// internal `data` `Vec` of the requested element if it's in bounds,
+    /// and `None` otherwise
+    fn get_index(&self, c: usize, r: usize) -> Option<usize> {
+        if c < self.width && r < self.height {
+            Some(r * self.width + c)
         } else {
             None
         }
     }
-}
 
-// iterator for column major form
-pub struct ColumnMajorIterator<'a, T> {
-    array2: &'a Array2<T>,
-    current_row: usize,
-    current_col: usize,
-}
-
-// note: we can iterate over only one column by writing a more custom for loop
-impl<'a, T: Clone> Iterator for ColumnMajorIterator<'a, T> {
-    type Item = T;
-
-    fn next(&mut self) -> Option<T> {
-        
-        // if we haven't reached the end of the column, return the next value
-        if self.current_row < self.array2.height && self.current_col < self.array2.width {
-            let value = self.array2.data[self.current_row * self.array2.width + self.current_col].clone()?;
-            self.current_row += 1;
-            Some(value)
-        
-        // if we have reached the end of the column, reset the row and increment the column
-        } else {
-            self.current_row = 0;
-            self.current_col += 1;
-            if self.current_col < self.array2.width {
-                self.next()
-            } else {
-                None
-            }
-        }
+    /// An Iterator over the values of the underlying
+    /// representation.
+    ///
+    /// # Returns
+    ///
+    /// * An `Iterator<Item = &elem>` which is a reference to a contained value.
+    fn _iter_values(&self) -> impl Iterator<Item = &T> {
+        self.data.iter()
     }
-}
 
+    fn _iter_row_major_naive(&self) -> impl Iterator<Item = (usize, usize, &T)> {
+        self.data.iter().enumerate().map(move |(i, element)| {
+            let c = i % self.width;
+            let r = i / self.width;
+            (c, r, element)
+        })
+    }
 
+    /// Returns an iterator over the rows of the underlying
+    /// representation.
+    ///
+    /// # Returns
+    ///
+    /// * An `Iterator<Item = (row, &elem)>` which is a 2-tuple holding the row index and
+    /// a reference to a contained value.
+    fn iter_rows(&self) -> impl Iterator<Item = (usize, impl Iterator<Item = &T>)> {
+        self.data
+            .chunks(self.width)
+            .enumerate()
+            .map(|(i, row)| (i, row.iter()))
+    }
 
+    /// An Iterator over the values of the `Array2` in row-major order.
+    ///
+    /// # Returns
+    ///
+    /// * An `Iterator<Item = (col, row, &elem)>` which is a 3-tuple holding the column index,
+    /// row index, and a reference to a contained value.
+    pub fn iter_row_major(&self) -> impl Iterator<Item = (usize, usize, &T)> {
+        self.iter_rows()
+            .flat_map(|(r, row)| row.enumerate().map(move |(c, element)| (c, r, element)))
+    }
 
+    /// Returns an iterator over the columns of the underlying
+    /// representation.
+    ///
+    /// # Returns
+    ///
+    /// * An `Iterator<Item = (col, &elem)>` which is a 2-tuple holding the column index and
+    /// a reference to a contained value.
+    fn iter_cols(&self) -> impl Iterator<Item = (usize, impl Iterator<Item = &T>)> {
+        (0..self.width)
+            // get the start of every column as a fresh iter and keep the index of the column
+            .map(move |c| (c, self.data.iter().skip(c)))
+            // for each iterator on a column, step forward by width for the correct next element in that column
+            .map(move |(c, col_start)| (c, col_start.step_by(self.width)))
+    }
 
-
-
-#[cfg(test)]
-mod tests {
-    // didn't get the chance to write real tests, but if we did, these are the ones they'd be
-
-    // check if array2 is right size
-
-    // check if array2 is filled with the right values
-
-    // check if row major iterator returns the right values for a valid/invalid sudoku
-
-    // check if column major iterator returns the right values for a valid/invalid sudoku
-
+    /// An Iterator over the values of the `Array2` in column-major order.
+    ///
+    /// # Returns
+    ///
+    /// * An `Iterator<Item = (col, row, &elem)>` which is a 3-tuple holding the column index,
+    /// row index, and a reference to a contained value.
+    pub fn iter_col_major(&self) -> impl Iterator<Item = (usize, usize, &T)> {
+        self.iter_cols()
+            .flat_map(|(c, col)| col.enumerate().map(move |(r, element)| (c, r, element)))
+    }
 }
